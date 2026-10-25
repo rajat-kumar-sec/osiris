@@ -1,0 +1,19 @@
+{
+  "name": "OSIRIS — Open Source Intelligence Platform",
+  "short_name": "OSIRIS",
+  "description": "Live flights, vessels, satellites, CCTV, hazards, cyber threats and a full OSINT reconnaissance suite on a 3D globe.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06060c",
+  "theme_color": "#d4af37",
+  "orientation": "any",
+  "categories": ["news", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
