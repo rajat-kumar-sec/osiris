@@ -121,12 +121,38 @@ async function rssNews(topic: NewsTopic): Promise<NewsArticle[]> {
   });
 }
 
+/** Attach approximate coordinates to headlines that do not carry them. */
+function geocodeHeadlines<T extends { title: string; lat?: number; lon?: number }>(items: T[]): T[] {
+  const aliases: [string, [number, number]][] = [
+    ["united states", COUNTRY_CENTROIDS.US],
+    ["u.s.", COUNTRY_CENTROIDS.US],
+    [" us ", COUNTRY_CENTROIDS.US],
+    ["britain", COUNTRY_CENTROIDS.GB],
+    ["uk", COUNTRY_CENTROIDS.GB],
+    ["united kingdom", COUNTRY_CENTROIDS.GB],
+  ];
+  const lookup = [...Object.entries(COUNTRY_NAMES), ...aliases];
+  for (const item of items) {
+    if (item.lat != null && item.lon != null) continue;
+    const hay = ` ${item.title.toLowerCase()} `;
+    for (const [name, c] of lookup) {
+      if (hay.includes(name.toLowerCase())) {
+        item.lat = c[0];
+        item.lon = c[1];
+        break;
+      }
+    }
+  }
+  return items;
+}
+
 export async function loadNews(topic: NewsTopic) {
   const [gdelt, rss] = await Promise.allSettled([gdeltNews(topic), rssNews(topic)]);
   const g = gdelt.status === "fulfilled" ? gdelt.value : [];
   const r = rss.status === "fulfilled" ? rss.value : [];
-  const useGdelt = g.length >= r.length;
-  const articles = useGdelt ? g : r;
+  const mapped = (list: { lat?: number }[]) => list.filter((a) => a.lat != null).length;
+  const useGdelt = mapped(g) >= 8 || g.length >= r.length;
+  const articles = geocodeHeadlines(useGdelt ? g : r);
   if (!articles.length) throw new Error("news upstreams returned no articles");
   return { articles, source: useGdelt ? "GDELT 2.0 DOC" : "Google News RSS", topic };
 }

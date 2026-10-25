@@ -71,7 +71,7 @@ All upstreams are public. OSIRIS does not scrape other aggregators; it talks to 
 
 - **Aviation** — adsb.lol, OpenSky Network
 - **Maritime** — AISStream (optional key), Digitraffic AIS
-- **Orbital** — CelesTrak GP elements, propagated in-process with SGP4 (`satellite.js`)
+- **Orbital** — CelesTrak GP elements, propagated in-process with SGP4 (`satellite.js`); SatNOGS DB, AMSAT and the keyless TLE API are used automatically if CelesTrak is unreachable
 - **Space weather** — NOAA SWPC
 - **Seismic** — USGS
 - **Fires / volcanoes** — NASA EONET, NASA FIRMS (optional key)
@@ -81,7 +81,7 @@ All upstreams are public. OSIRIS does not scrape other aggregators; it talks to 
 - **Surveillance** — Caltrans, Transport for London and other public camera APIs
 - **Cyber** — CISA KEV, NVD, Feodo Tracker, abuse.ch URLhaus (optional key), Spamhaus DROP, Tor exit list
 - **Network** — Cloudflare Radar (optional token), RIPEstat, ipwho.is, RDAP, Cloudflare DoH, crt.sh
-- **News / conflict** — GDELT
+- **News / conflict** — GDELT 2.0 DOC and Google News RSS, queried in parallel
 - **Markets** — Yahoo Finance chart API, CoinGecko
 - **Cables** — TeleGeography public GeoJSON
 - **Nuclear** — Wikidata / IAEA-derived open records

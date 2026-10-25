@@ -31,6 +31,8 @@ import {
   firesGeo,
   flightsGeo,
   gpsJamGeo,
+  incidentsGeo,
+  nightGeo,
   nuclearGeo,
   portsGeo,
   quakesGeo,
@@ -45,6 +47,7 @@ import type {
   Cable,
   CctvCamera,
   GpsJamCell,
+  LayerId,
   NewsItem,
   NuclearSite,
   Port,
@@ -77,6 +80,8 @@ const INTERACTIVE = [
   "jam",
   "cyber",
   "conflict",
+  "news",
+  "incidents",
   "cables",
 ];
 
@@ -145,6 +150,12 @@ export default function Globe() {
     layers.volcanoes,
   );
   const conflictNews = useFeed<{ articles: NewsItem[] }>("/api/news?topic=conflict", 300_000, layers.conflict);
+  const liveNews = useFeed<{ articles: NewsItem[] }>("/api/news", 300_000, layers["live-news"]);
+  const incidents = useFeed<{ events: { id: string; type: string; name: string; alert: string; lat: number; lon: number; from: string; url: string }[] }>(
+    "/api/hazards",
+    300_000,
+    layers.incidents,
+  );
   const radar = useFeed<{ host: string; frames: { time: number; path: string }[] }>("/api/weather", 120_000, layers["weather-radar"]);
 
   const airportFeatures = useMemo(() => airportsGeo(airportsJson as never), []);
@@ -380,7 +391,9 @@ export default function Globe() {
     setSource("airports", airportFeatures);
     setSource("ports", portFeatures);
     setSource("conflict", conflictNews.data ? conflictGeo(conflictNews.data.articles) : null);
-  }, [ready, flights.data, ships.data, sats.data, stations.data, quakes.data, fires.data, storms.data, cams.data, nuclear.data, gpsjam.data, cyber.data, cables.data, trains.data, conflictNews.data, airportFeatures, portFeatures]);
+    setSource("news", liveNews.data ? conflictGeo(liveNews.data.articles) : null);
+    setSource("incidents", incidents.data ? incidentsGeo(incidents.data.events) : null);
+  }, [ready, flights.data, ships.data, sats.data, stations.data, quakes.data, fires.data, storms.data, cams.data, nuclear.data, gpsjam.data, cyber.data, cables.data, trains.data, conflictNews.data, liveNews.data, incidents.data, airportFeatures, portFeatures]);
 
   useEffect(() => {
     if (!volcanoes.data) return;
@@ -418,11 +431,13 @@ export default function Globe() {
       trains: trains.data?.trains.length ?? 0,
       volcanoes: volcanoes.data?.length ?? 0,
       conflict: conflictNews.data?.articles.length ?? 0,
+      "live-news": liveNews.data?.articles.length ?? 0,
+      incidents: incidents.data?.events.length ?? 0,
       airports: (airportsJson as unknown[]).length,
       ports: portsData.length,
       outages: 0,
     });
-  }, [flights.data, ships.data, sats.data, stations.data, quakes.data, fires.data, storms.data, cams.data, nuclear.data, gpsjam.data, cyber.data, cables.data, trains.data, volcanoes.data, conflictNews.data, portsData.length, setCounts]);
+  }, [flights.data, ships.data, sats.data, stations.data, quakes.data, fires.data, storms.data, cams.data, nuclear.data, gpsjam.data, cyber.data, cables.data, trains.data, volcanoes.data, conflictNews.data, liveNews.data, incidents.data, portsData.length, setCounts]);
 
   /* â”€â”€ radar frames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   useEffect(() => {
@@ -500,11 +515,51 @@ export default function Globe() {
       ["cyber", layers.cyber],
       ["jam", layers.gpsjam],
       ["conflict", layers.conflict],
+      ["news", layers["live-news"]],
+      ["incidents", layers.incidents],
+      ["night", layers["day-night"]],
     ];
     for (const [id, on] of visibility) {
       if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
     }
   }, [layers, ready]);
+
+  /* ── solar terminator refresh ──────────────────────────────────────────── */
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m || !ready) return;
+    const paint = () => setSource("night", nightGeo());
+    paint();
+    const timer = setInterval(paint, 300_000);
+    return () => clearInterval(timer);
+  }, [ready]);
+
+  /* ── deep links: /?layers=day_night,live_news,... ─────────────────────── */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = new URLSearchParams(window.location.search).get("layers");
+    if (!raw) return;
+    const alias: Record<string, LayerId[]> = {
+      maritime: ["ships", "ports"],
+      satellites: ["satellites", "iss"],
+      cctv: ["cctv"],
+      cctv_previews: ["cctv"],
+      live_news: ["live-news"],
+      earthquakes: ["earthquakes"],
+      global_incidents: ["incidents"],
+      day_night: ["day-night"],
+      cables: ["cables"],
+      rain_controls: ["weather-radar"],
+      wind_controls: [],
+      sdk_sea: ["ships"],
+      sdk_air: ["flights"],
+      sdk_naval: ["ships"],
+    };
+    const { setLayer } = useOsiris.getState();
+    for (const token of raw.split(",")) {
+      for (const id of alias[token.trim()] ?? []) setLayer(id, true);
+    }
+  }, []);
 
   /* â”€â”€ draw mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   useEffect(() => {
@@ -755,6 +810,15 @@ function addDataLayers(map: MapLibreMap) {
   const add = (id: string, data: GeoJSON.FeatureCollection = EMPTY) =>
     map.addSource(id, { type: "geojson", data });
 
+  add("night", nightGeo());
+  map.addLayer({
+    id: "night",
+    type: "fill",
+    source: "night",
+    layout: { visibility: "none" },
+    paint: { "fill-color": "#01030a", "fill-opacity": 0.46 },
+  });
+
   add("cables");
   map.addLayer({
     id: "cables",
@@ -791,6 +855,34 @@ function addDataLayers(map: MapLibreMap) {
       "circle-opacity": 0.65,
       "circle-stroke-color": "#ffcf8a",
       "circle-stroke-width": 0.5,
+    },
+  });
+
+  add("news");
+  map.addLayer({
+    id: "news",
+    type: "circle",
+    source: "news",
+    paint: {
+      "circle-radius": 4,
+      "circle-color": "#ffd166",
+      "circle-opacity": 0.7,
+      "circle-stroke-color": "#fff0b8",
+      "circle-stroke-width": 0.6,
+    },
+  });
+
+  add("incidents");
+  map.addLayer({
+    id: "incidents",
+    type: "circle",
+    source: "incidents",
+    paint: {
+      "circle-radius": ["match", ["get", "level"], "Red", 8, "Orange", 6, 4],
+      "circle-color": ["match", ["get", "level"], "Red", "#ff3b30", "Orange", "#ff9500", "#ffd166"],
+      "circle-opacity": 0.85,
+      "circle-stroke-color": "#0a0a0a",
+      "circle-stroke-width": 1,
     },
   });
 

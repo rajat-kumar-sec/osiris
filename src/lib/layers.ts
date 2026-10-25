@@ -39,8 +39,12 @@ export const LAYERS: LayerDef[] = [
   { id: "cyber", label: "Cyber Threats", group: "threats", color: "#ff4d6d", description: "CISA KEV, NVD and botnet C2 geolocation" },
   { id: "gpsjam", label: "GPS Jamming", group: "threats", color: "#ff2d55", description: "ADS-B navigation degradation cells" },
   { id: "conflict", label: "Conflict Watch", group: "threats", color: "#ff9f1c", description: "Geolocated conflict reporting" },
+  { id: "live-news", label: "Live News", group: "threats", color: "#ffd166", description: "Geolocated world headlines from GDELT and Google News" },
+  { id: "incidents", label: "Global Incidents", group: "hazards", color: "#ff7a45", description: "GDACS disaster alerts worldwide" },
 
   { id: "outages", label: "Internet Outages", group: "network", color: "#7d7dff", description: "Cloudflare Radar outage annotations" },
+
+  { id: "day-night", label: "Day / Night", group: "display", color: "#55617a", description: "Live solar terminator shading" },
 ];
 
 export const LAYER_BY_ID = new Map<LayerId, LayerDef>(LAYERS.map((l) => [l.id, l]));
@@ -64,6 +68,9 @@ export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   outages: false,
   "weather-radar": true,
   conflict: false,
+  "live-news": false,
+  incidents: false,
+  "day-night": false,
   trains: false,
 };
 

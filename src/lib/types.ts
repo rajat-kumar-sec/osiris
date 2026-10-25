@@ -246,6 +246,9 @@ export type LayerId =
   | "outages"
   | "weather-radar"
   | "conflict"
+  | "live-news"
+  | "incidents"
+  | "day-night"
   | "trains";
 
 export type LayerGroupId =

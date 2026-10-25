@@ -280,6 +280,58 @@ export function conflictGeo(items: NewsItem[]): GeoJSON.FeatureCollection {
   );
 }
 
+type Incident = { id: string; type: string; name: string; alert: string; lat: number; lon: number; from: string; url: string };
+
+export function incidentsGeo(events: Incident[]): GeoJSON.FeatureCollection {
+  return fc(
+    events
+      .filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lon))
+      .map((e) => ({
+        type: "Feature",
+        geometry: point(e.lon, e.lat),
+        properties: {
+          id: e.id,
+          kind: "incident",
+          title: e.name.slice(0, 90),
+          subtitle: `${e.type} · ${e.alert}`,
+          level: e.alert,
+          payload: JSON.stringify(e),
+        },
+      })),
+  );
+}
+
+/**
+ * Solar terminator polygon: the region where the sun is below the horizon.
+ * Recomputed on a short interval so the shading tracks real time.
+ */
+export function nightGeo(date: Date = new Date()): GeoJSON.FeatureCollection {
+  const rad = Math.PI / 180;
+  const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const doy = (date.getTime() - yearStart) / 86_400_000;
+  const dec = -23.44 * Math.cos(rad * (360 / 365) * (doy + 10));
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const subLon = 180 - utcHours * 15;
+
+  const ring: [number, number][] = [];
+  const tanDec = Math.tan(dec * rad);
+  for (let lon = -180; lon <= 180; lon += 1.5) {
+    const h = (lon - subLon) * rad;
+    const lat = Math.abs(tanDec) < 1e-6 ? 0 : Math.atan(-Math.cos(h) / tanDec) / rad;
+    ring.push([lon, Math.max(-89.5, Math.min(89.5, lat))]);
+  }
+  const darkPole = dec >= 0 ? -90 : 90;
+  ring.push([180, darkPole], [-180, darkPole], [ring[0][0], ring[0][1]]);
+
+  return fc([
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [ring] },
+      properties: { kind: "night" },
+    },
+  ]);
+}
+
 export function drawingsGeo(drawings: { id: string; type: string; coords: [number, number][]; label?: string }[]): GeoJSON.FeatureCollection {
   const features: Feature[] = [];
   for (const d of drawings) {
