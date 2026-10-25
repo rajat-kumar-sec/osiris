@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // Docker images build a self-contained server; local dev/prod keep using `next start`.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },

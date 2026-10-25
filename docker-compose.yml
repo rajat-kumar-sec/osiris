@@ -1,0 +1,26 @@
+services:
+  osiris:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: osiris:5.0
+    container_name: osiris
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      # Optional upstream keys — the app runs keyless without them.
+      # AISSTREAM_KEY: ""
+      # NASA_FIRMS_KEY: ""
+      # OI_API_KEY: ""
+      SCAN_RATE_PER_HOUR: "20"
+      SCAN_TIMEOUT_MS: "1200"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 25s
+    security_opt:
+      - no-new-privileges:true
