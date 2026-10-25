@@ -816,7 +816,7 @@ function addDataLayers(map: MapLibreMap) {
     type: "fill",
     source: "night",
     layout: { visibility: "none" },
-    paint: { "fill-color": "#01030a", "fill-opacity": 0.46 },
+    paint: { "fill-color": "#01030a", "fill-opacity": 0.4 },
   });
 
   add("cables");
