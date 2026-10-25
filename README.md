@@ -9,7 +9,7 @@ Built with Next.js 16, React 19, MapLibre GL 6 and Tailwind 4. No accounts, no p
 
 ## Highlights
 
-- **3D / 2D globe** with terrain, animated radar, ten themed basemaps and smooth camera commands.
+- **3D / 2D globe** with terrain, animated radar, four basemaps (dark vector, satellite, topographic, streets) and smooth camera commands.
 - **19 live layers** across aviation, maritime, ground transit, space, surveillance, hazards, threats, network intel
   and weather.
 - **12 operator tools**: Recon, Space, Markets, Alerts, Draw, OI, Directions, Search, ArcGIS, Remote, Style Studio and
@@ -77,6 +77,7 @@ All upstreams are public. OSIRIS does not scrape other aggregators; it talks to 
 - **Fires / volcanoes** — NASA EONET, NASA FIRMS (optional key)
 - **Storms** — NOAA NHC, GDACS
 - **Weather radar** — RainViewer
+- **Basemaps** — OpenFreeMap (dark vector), Esri World Imagery / Topo / Streets
 - **Surveillance** — Caltrans, Transport for London and other public camera APIs
 - **Cyber** — CISA KEV, NVD, Feodo Tracker, abuse.ch URLhaus (optional key), Spamhaus DROP, Tor exit list
 - **Network** — Cloudflare Radar (optional token), RIPEstat, ipwho.is, RDAP, Cloudflare DoH, crt.sh
