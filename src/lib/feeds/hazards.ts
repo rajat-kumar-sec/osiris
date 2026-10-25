@@ -200,26 +200,76 @@ export async function loadStorms() {
   return { storms, source: "NOAA NHC + GDACS" };
 }
 
+type GdacsEvent = {
+  id: string;
+  type: string;
+  name: string;
+  alert: string;
+  lat: number;
+  lon: number;
+  from: string;
+  url: string;
+};
+
+function decodeXml(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** GDACS RSS is one request and far more reliable than the per-type MAP API. */
+async function loadGdacsRss(): Promise<GdacsEvent[]> {
+  const xml = await fetchText("https://www.gdacs.org/xml/rss.xml", { timeout: 14_000, retries: 0 });
+  const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
+  const out: GdacsEvent[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!/<gdacs:iscurrent>true<\/gdacs:iscurrent>/i.test(item)) continue;
+    const guid = (item.match(/<guid[^>]*>([^<]+)<\/guid>/i)?.[1] ?? "").trim();
+    const title = decodeXml((item.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim());
+    const lat = num(item.match(/<geo:lat>([-\d.]+)<\/geo:lat>/i)?.[1], NaN);
+    const lon = num(item.match(/<geo:long>([-\d.]+)<\/geo:long>/i)?.[1], NaN);
+    const point = (item.match(/<georss:point>([-\d.]+)\s+([-\d.]+)<\/georss:point>/i) ?? []).slice(1);
+    const plat = Number.isFinite(lat) ? lat : num(point[0], NaN);
+    const plon = Number.isFinite(lon) ? lon : num(point[1], NaN);
+    const id = guid || (item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] ?? title);
+    if (!id || seen.has(id) || !Number.isFinite(plat) || !Number.isFinite(plon)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      type: (guid.match(/^[A-Za-z]+/)?.[0] ?? "EV").toUpperCase(),
+      name: title.replace(/^(green|orange|red)\s+(notification|alert)\s+for\s+/i, "").split(".")[0].trim() || "Disaster",
+      alert: (title.match(/^(green|orange|red)/i)?.[1] ?? "Green").replace(/^./, (c) => c.toUpperCase()),
+      lat: plat,
+      lon: plon,
+      from: (item.match(/<gdacs:fromdate>([^<]+)<\/gdacs:fromdate>/i)?.[1] ?? "").trim(),
+      url: decodeXml((item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] ?? "").trim()),
+    });
+  }
+  return out;
+}
+
 export async function loadGdacs() {
-  const types = ["EQ", "FL", "VO", "WF", "DR", "TC"];
+  try {
+    const events = await loadGdacsRss();
+    if (events.length) return { events, source: "GDACS RSS" };
+  } catch {
+    /* fall through to the MAP API */
+  }
+
+  const types = ["EQ", "FL", "WF", "DR", "TC"];
   const results = await Promise.allSettled(
     types.map((t) =>
       fetchJson<{ features: GeoFeature<[number, number], Record<string, unknown>>[] }>(
         `https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtype=${t}`,
-        { timeout: 9000 },
+        { timeout: 7000, retries: 0 },
       ),
     ),
   );
-  const out: {
-    id: string;
-    type: string;
-    name: string;
-    alert: string;
-    lat: number;
-    lon: number;
-    from: string;
-    url: string;
-  }[] = [];
+  const out: GdacsEvent[] = [];
   const seen = new Set<string>();
   results.forEach((r) => {
     if (r.status !== "fulfilled") return;

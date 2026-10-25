@@ -37,14 +37,113 @@ function epochOf(tle: Tle): number {
   return Date.UTC(year, 0, 1) + (doy - 1) * 86400000;
 }
 
+/** Name filters used when a fallback source returns one undifferentiated TLE pool. */
+const GROUP_PATTERNS: Record<SatGroupId, RegExp | null> = {
+  stations: /ISS|ZARYA|TIANGONG|TIANHE|CSS|SHENZHOU|SOYUZ|CREW DRAGON|NAUKA|OUTPOST/i,
+  "gps-ops": /NAVSTAR|GPS/i,
+  weather: /NOAA|METEOR|GOES|FENGYUN|METOP|HIMAWARI|SUOMI|ELEKTRO|METEOSAT|INSAT/i,
+  science: /HUBBLE|HST|SWIFT|XMM|FERMI|CHANDRA|TESS|LANDSAT|SENTINEL|AQUA|TERRA|GRACE|ICESAT|JASON|AURA|NUSTAR/i,
+  starlink: /STARLINK/i,
+  active: null,
+};
+
+const TLE_QUERY: Record<SatGroupId, string> = {
+  stations: "iss",
+  "gps-ops": "gps",
+  weather: "noaa",
+  science: "hubble",
+  starlink: "starlink",
+  active: "starlink",
+};
+
+let satnogsCache: { at: number; tles: Tle[] } | null = null;
+
+/** One shared TLE pool from SatNOGS DB (free, keyless, refreshes daily). */
+async function loadSatnogsTles(): Promise<Tle[]> {
+  if (satnogsCache && Date.now() - satnogsCache.at < 1_800_000) return satnogsCache.tles;
+  const rows = await fetchJson<{ tle0?: string; tle1?: string; tle2?: string }[]>(
+    "https://db.satnogs.org/api/tle/?format=json",
+    { timeout: 12_000, retries: 0 },
+  );
+  const tles = rows
+    .filter((r) => r.tle1?.startsWith("1 ") && r.tle2?.startsWith("2 "))
+    .map((r) => ({ name: (r.tle0 ?? "OBJECT").trim(), line1: r.tle1!, line2: r.tle2! }));
+  if (!tles.length) throw new Error("SatNOGS returned no TLEs");
+  satnogsCache = { at: Date.now(), tles };
+  return tles;
+}
+
+/** Paged TLE API fallback, used where one group needs more objects than SatNOGS holds. */
+async function loadTleApi(query: string, pages = 5): Promise<Tle[]> {
+  const reqs = Array.from({ length: pages }, (_, i) =>
+    fetchJson<{ member?: { name?: string; line1?: string; line2?: string }[] }>(
+      `https://tle.ivanstanojevic.me/api/tle?search=${encodeURIComponent(query)}&page=${i + 1}`,
+      { timeout: 8000, retries: 0 },
+    ).catch(() => ({ member: [] })),
+  );
+  const pagesOut = await Promise.all(reqs);
+  return pagesOut
+    .flatMap((p) => p.member ?? [])
+    .filter((m) => m.line1?.startsWith("1 ") && m.line2?.startsWith("2 "))
+    .map((m) => ({ name: (m.name ?? "OBJECT").trim(), line1: m.line1!, line2: m.line2! }));
+}
+
+/** Fetch a TLE group from CelesTrak with layered keyless fallbacks. */
+async function loadTleGroup(group: SatGroupId): Promise<{ tles: Tle[]; source: string }> {
+  const pattern = GROUP_PATTERNS[group];
+
+  // Query the primary source and the fallback pool concurrently so a blocked or
+  // slow CelesTrak does not add its full timeout to the response time.
+  const [celestrak, satnogs] = await Promise.all([
+    fetchText(
+      `https://celestrak.org/NORAD/elements/gp.php?GROUP=${encodeURIComponent(group)}&FORMAT=tle`,
+      { timeout: 6000, retries: 0 },
+    )
+      .then((text) => parseTle(text))
+      .catch(() => [] as Tle[]),
+    loadSatnogsTles().catch(() => [] as Tle[]),
+  ]);
+
+  if (celestrak.length) return { tles: celestrak, source: "CelesTrak GP" };
+
+  try {
+    let tles = pattern ? satnogs.filter((t) => pattern.test(t.name)) : satnogs;
+    if (group === "starlink" || group === "gps-ops" || (tles.length > 0 && tles.length < 25)) {
+      const extra = await loadTleApi(TLE_QUERY[group], group === "starlink" ? 8 : 3);
+      const seen = new Set(tles.map((t) => t.name));
+      for (const t of extra) {
+        if (pattern && !pattern.test(t.name)) continue;
+        if (seen.has(t.name)) continue;
+        seen.add(t.name);
+        tles.push(t);
+      }
+      if (tles.length) return { tles, source: "SatNOGS + TLE API" };
+    }
+    if (tles.length) return { tles, source: "SatNOGS DB" };
+  } catch {
+    /* fall through */
+  }
+
+  try {
+    const text = await fetchText("https://www.amsat.org/tle/current/nasabare.txt", {
+      timeout: 8000,
+      retries: 0,
+    });
+    const pool = parseTle(text);
+    const tles = pattern ? pool.filter((t) => pattern.test(t.name)) : pool;
+    if (tles.length) return { tles, source: "AMSAT" };
+  } catch {
+    /* fall through */
+  }
+
+  const tles = await loadTleApi(TLE_QUERY[group]);
+  return { tles, source: "TLE API" };
+}
+
 /** Fetch a TLE group and propagate every object to the current instant. */
 export async function loadSatellites(group: SatGroupId) {
   const cfg = SAT_GROUPS[group];
-  const text = await fetchText(
-    `https://celestrak.org/NORAD/elements/gp.php?GROUP=${encodeURIComponent(group)}&FORMAT=tle`,
-    { timeout: 15000, retries: 1 },
-  );
-  const tles = parseTle(text);
+  const { tles, source } = await loadTleGroup(group);
   const now = new Date();
   const gmst = satellite.gstime(now);
   const out: SatellitePosition[] = [];
@@ -81,7 +180,7 @@ export async function loadSatellites(group: SatGroupId) {
     satellites: out,
     tleCount: tles.length,
     epoch: now.toISOString(),
-    source: "CelesTrak GP",
+    source,
   };
 }
 

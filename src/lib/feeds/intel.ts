@@ -71,7 +71,7 @@ async function gdeltNews(topic: NewsTopic): Promise<NewsArticle[]> {
   const q = encodeURIComponent(NEWS_TOPICS[topic]);
   const data = await fetchJson<{ articles?: GdeltArticle[] }>(
     `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}&mode=artlist&maxrecords=60&format=json&sort=datedesc&timespan=1d`,
-    { timeout: 12000 },
+    { timeout: 9000, retries: 0 },
   );
   return (data.articles ?? []).map((a, i) => {
     const c = COUNTRY_NAMES[a.sourcecountry];
@@ -105,7 +105,7 @@ async function rssNews(topic: NewsTopic): Promise<NewsArticle[]> {
   const q = encodeURIComponent(NEWS_TOPICS[topic]);
   const xml = await fetchText(
     `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`,
-    { timeout: 12000 },
+    { timeout: 9000, retries: 0 },
   );
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 40);
   return items.map((m, i) => {
@@ -122,14 +122,13 @@ async function rssNews(topic: NewsTopic): Promise<NewsArticle[]> {
 }
 
 export async function loadNews(topic: NewsTopic) {
-  try {
-    const articles = await gdeltNews(topic);
-    if (articles.length) return { articles, source: "GDELT 2.0 DOC", topic };
-  } catch {
-    /* fall through */
-  }
-  const articles = await rssNews(topic);
-  return { articles, source: "Google News RSS", topic };
+  const [gdelt, rss] = await Promise.allSettled([gdeltNews(topic), rssNews(topic)]);
+  const g = gdelt.status === "fulfilled" ? gdelt.value : [];
+  const r = rss.status === "fulfilled" ? rss.value : [];
+  const useGdelt = g.length >= r.length;
+  const articles = useGdelt ? g : r;
+  if (!articles.length) throw new Error("news upstreams returned no articles");
+  return { articles, source: useGdelt ? "GDELT 2.0 DOC" : "Google News RSS", topic };
 }
 
 /* ── GPS jamming (gpsjam.org H3 cells) ─────────────────────── */
